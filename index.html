@@ -797,7 +797,7 @@ textarea { resize: none; }
 <!-- SENDING OVERLAY -->
 <div id="sending-overlay">
   <div class="spinner"></div>
-  <div class="sending-text">Submitting & sending emails...</div>
+  <div class="sending-text" id="sending-text">Compressing images...</div>
 </div>
 
 <!-- SUCCESS SCREEN -->
@@ -1000,13 +1000,51 @@ function buildReview() {
 }
 
 // SUBMIT
-async function imageFileToBase64(file) {
+
+// Compress an image File/Blob to a base64 string under maxBytes
+async function compressImage(file, maxBytes, maxW, maxH) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
     reader.onerror = reject;
+    reader.onload = e => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        const tryCompress = (quality, w, h) => {
+          const c = document.createElement('canvas');
+          c.width = w; c.height = h;
+          c.getContext('2d').drawImage(img, 0, 0, w, h);
+          const data = c.toDataURL('image/jpeg', quality);
+          // base64 string length * 0.75 = approx byte size
+          if (data.length * 0.75 <= maxBytes || quality <= 0.05) return data;
+          // reduce quality first, then size
+          if (quality > 0.1) return tryCompress(parseFloat((quality - 0.1).toFixed(2)), w, h);
+          return tryCompress(0.05, Math.round(w * 0.75), Math.round(h * 0.75));
+        };
+        // Scale down to maxW x maxH maintaining aspect ratio
+        let w = img.width, h = img.height;
+        if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
+        if (h > maxH) { w = Math.round(w * maxH / h); h = maxH; }
+        resolve(tryCompress(0.7, w, h));
+      };
+      img.src = e.target.result;
+    };
     reader.readAsDataURL(file);
   });
+}
+
+// Compress signature canvas to under 20KB
+function compressSig() {
+  const c = document.createElement('canvas');
+  c.width = canvas.width; c.height = canvas.height;
+  c.getContext('2d').drawImage(canvas, 0, 0);
+  let q = 0.8;
+  let data = c.toDataURL('image/jpeg', q);
+  while (data.length * 0.75 > 20000 && q > 0.1) {
+    q = parseFloat((q - 0.1).toFixed(2));
+    data = c.toDataURL('image/jpeg', q);
+  }
+  return data;
 }
 
 async function submitForm() {
@@ -1027,9 +1065,11 @@ async function submitForm() {
     const agent = (document.querySelector('input[name="agent"]:checked') || {}).value || '—';
     const mode = (document.querySelector('input[name="mode"]:checked') || {}).value || '—';
     const emp = (document.querySelector('input[name="emp"]:checked') || {}).value || '—';
-    const sigImage = canvas.toDataURL('image/png');
+    // Compress signature to ~20KB
+    const sigImage = compressSig();
+    // Compress package photo to ~45KB (leave a little room)
     const proofFile = document.getElementById('proof-file').files[0];
-    const pkgImage = proofFile ? await imageFileToBase64(proofFile) : '';
+    const pkgImage = proofFile ? await compressImage(proofFile, 45000, 800, 800) : '';
 
     const commonParams = {
       ref_number: ref,
@@ -1048,6 +1088,7 @@ async function submitForm() {
       package_image: pkgImage
     };
 
+    document.getElementById('sending-text').textContent = 'Sending emails...';
     await emailjs.send('service_hhlqbye', 'template_rbuw2wl', commonParams);
     await emailjs.send('service_hhlqbye', 'template_7d8vxhp', commonParams);
 
