@@ -841,6 +841,8 @@ function updateNav() {
 function showPage(n) {
   document.querySelectorAll('.page').forEach((p,i) => p.className = 'page' + (i===n ? ' active' : ''));
   window.scrollTo({ top: 0, behavior: 'smooth' });
+  // Setup canvas when signature page becomes visible
+  if (n === 3) { setTimeout(setupCanvas, 50); }
 }
 
 function jumpStep(n) {
@@ -936,38 +938,53 @@ function handlePhoto(input) {
 const canvas = document.getElementById('sig-canvas');
 const ctx = canvas.getContext('2d');
 let drawing = false;
+let canvasReady = false;
 
 function setupCanvas() {
-  const w = canvas.offsetWidth;
+  // Use full page width minus padding since canvas may be in a hidden page
+  const w = canvas.parentElement.offsetWidth || (window.innerWidth - 64);
   const h = 160;
   const dpr = window.devicePixelRatio || 1;
   canvas.width = w * dpr;
   canvas.height = h * dpr;
+  canvas.style.width = w + 'px';
   canvas.style.height = h + 'px';
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.scale(dpr, dpr);
   ctx.strokeStyle = '#1a1a1a';
   ctx.lineWidth = 2.5;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
+  canvasReady = true;
 }
-setupCanvas();
+
+function ensureCanvas() {
+  if (!canvasReady || canvas.width === 0) setupCanvas();
+}
 
 function getXY(e) {
   const r = canvas.getBoundingClientRect();
   const src = e.touches ? e.touches[0] : e;
   return { x: src.clientX - r.left, y: src.clientY - r.top };
 }
-canvas.addEventListener('mousedown', e => { drawing = true; const p = getXY(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); });
+canvas.addEventListener('mousedown', e => { ensureCanvas(); drawing = true; const p = getXY(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); });
 canvas.addEventListener('mousemove', e => { if (!drawing) return; const p = getXY(e); ctx.lineTo(p.x, p.y); ctx.stroke(); hasSig = true; document.getElementById('sig-placeholder').style.display='none'; });
 canvas.addEventListener('mouseup', () => drawing = false);
 canvas.addEventListener('mouseleave', () => drawing = false);
-canvas.addEventListener('touchstart', e => { e.preventDefault(); drawing = true; const p = getXY(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); }, { passive: false });
+canvas.addEventListener('touchstart', e => { e.preventDefault(); ensureCanvas(); drawing = true; const p = getXY(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); }, { passive: false });
 canvas.addEventListener('touchmove', e => { e.preventDefault(); if (!drawing) return; const p = getXY(e); ctx.lineTo(p.x, p.y); ctx.stroke(); hasSig = true; document.getElementById('sig-placeholder').style.display='none'; }, { passive: false });
 canvas.addEventListener('touchend', () => drawing = false);
 
 function clearSig() {
+  if (!canvasReady) return;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
   const dpr = window.devicePixelRatio || 1;
-  ctx.clearRect(0, 0, canvas.width/dpr, canvas.height/dpr);
+  ctx.scale(dpr, dpr);
+  ctx.strokeStyle = '#1a1a1a';
+  ctx.lineWidth = 2.5;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
   hasSig = false;
   document.getElementById('sig-placeholder').style.display = 'block';
 }
@@ -995,7 +1012,7 @@ function buildReview() {
   document.getElementById('rv-emp').textContent = emp ? emp.value : '—';
   const preview = document.getElementById('preview-img');
   if (preview.src) { const ri = document.getElementById('rv-photo'); ri.src = preview.src; ri.style.display = 'block'; }
-  document.getElementById('rv-sig').src = canvas.toDataURL();
+  document.getElementById('rv-sig').src = compressSig();
   document.getElementById('rv-sig').style.display = 'block';
 }
 
@@ -1035,10 +1052,19 @@ async function compressImage(file, maxBytes, maxW, maxH) {
 
 // Compress signature canvas to under 20KB
 function compressSig() {
+  // Ensure canvas is properly sized before export
+  if (!canvasReady || canvas.width === 0) setupCanvas();
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.width / dpr;
+  const h = canvas.height / dpr;
+  // Draw onto a non-DPR canvas for export
   const c = document.createElement('canvas');
-  c.width = canvas.width; c.height = canvas.height;
-  c.getContext('2d').drawImage(canvas, 0, 0);
-  let q = 0.8;
+  c.width = w; c.height = h;
+  const cctx = c.getContext('2d');
+  cctx.fillStyle = '#ffffff';
+  cctx.fillRect(0, 0, w, h);
+  cctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, w, h);
+  let q = 0.85;
   let data = c.toDataURL('image/jpeg', q);
   while (data.length * 0.75 > 20000 && q > 0.1) {
     q = parseFloat((q - 0.1).toFixed(2));
