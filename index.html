@@ -661,7 +661,7 @@ textarea { resize: none; }
   <!-- PAGE 3: PHOTO -->
   <div class="page" id="page-2">
     <div class="card">
-      <div class="card-title">Proof of Delivery / Pick-Up <span class="req">*</span></div>
+      <div class="card-title">Proof of Delivery / Pick-Up <span style="font-size:10px;font-weight:600;color:var(--mid);letter-spacing:1px;">(optional)</span></div>
       <div class="photo-area" id="photo-area" onclick="triggerFile()">
         <input type="file" id="proof-file" accept="image/*" capture="environment" onchange="handlePhoto(this)" style="display:none">
         <div class="photo-icon" id="photo-icon">📷</div>
@@ -672,10 +672,10 @@ textarea { resize: none; }
         <img id="preview-img" src="" alt="Package photo">
       </div>
       <div class="photo-change" id="photo-change" onclick="triggerFile()">📷 Retake Photo</div>
-      <div class="err-msg" id="e-photo">Please take a photo of the package(s)</div>
+
     </div>
     <div class="card" style="background: #fffbea; border-color: #f0d070;">
-      <p style="font-size:13px;color:#7a6010;line-height:1.6;"><strong>💡 Tip:</strong> Take a photo that clearly shows all packages and any visible labels or markings. This is your proof of pickup.</p>
+      <p style="font-size:13px;color:#7a6010;line-height:1.6;"><strong>💡 Tip:</strong> A photo is optional but recommended — it serves as visual proof in case of any dispute about missing or damaged items.</p>
     </div>
   </div>
 
@@ -797,7 +797,7 @@ textarea { resize: none; }
 <!-- SENDING OVERLAY -->
 <div id="sending-overlay">
   <div class="spinner"></div>
-  <div class="sending-text" id="sending-text">Compressing images...</div>
+  <div class="sending-text" id="sending-text">Preparing submission...</div>
 </div>
 
 <!-- SUCCESS SCREEN -->
@@ -873,9 +873,7 @@ function validateStep(step) {
     if (!agent) { ae.classList.add('show-err'); ok = false; } else ae.classList.remove('show-err');
   }
   if (step === 2) {
-    const f = document.getElementById('proof-file');
-    const pe = document.getElementById('e-photo');
-    if (!f.files || !f.files.length) { pe.classList.add('show-err'); ok = false; } else pe.classList.remove('show-err');
+    // Photo is optional — no validation required
   }
   if (step === 3) {
     const se = document.getElementById('e-sig');
@@ -931,7 +929,7 @@ function handlePhoto(input) {
   document.getElementById('photo-icon').textContent = '✅';
   document.getElementById('photo-text').textContent = 'Photo captured!';
   document.getElementById('photo-sub').textContent = input.files[0].name;
-  document.getElementById('e-photo').classList.remove('show-err');
+
 }
 
 // SIGNATURE
@@ -1019,32 +1017,33 @@ function buildReview() {
 // SUBMIT
 
 // Compress an image File/Blob to a base64 string under maxBytes
-async function compressImage(file, maxBytes, maxW, maxH) {
+// -------------------------------------------------------
+// ImgBB upload — replace YOUR_IMGBB_API_KEY with your key
+const IMGBB_API_KEY = '64eca4ce947a07000db0a9fd41ad50d3';
+// -------------------------------------------------------
+
+async function uploadToImgBB(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = reject;
-    reader.onload = e => {
-      const img = new Image();
-      img.onerror = reject;
-      img.onload = () => {
-        const tryCompress = (quality, w, h) => {
-          const c = document.createElement('canvas');
-          c.width = w; c.height = h;
-          c.getContext('2d').drawImage(img, 0, 0, w, h);
-          const data = c.toDataURL('image/jpeg', quality);
-          // base64 string length * 0.75 = approx byte size
-          if (data.length * 0.75 <= maxBytes || quality <= 0.05) return data;
-          // reduce quality first, then size
-          if (quality > 0.1) return tryCompress(parseFloat((quality - 0.1).toFixed(2)), w, h);
-          return tryCompress(0.05, Math.round(w * 0.75), Math.round(h * 0.75));
-        };
-        // Scale down to maxW x maxH maintaining aspect ratio
-        let w = img.width, h = img.height;
-        if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
-        if (h > maxH) { w = Math.round(w * maxH / h); h = maxH; }
-        resolve(tryCompress(0.7, w, h));
-      };
-      img.src = e.target.result;
+    reader.onload = async e => {
+      try {
+        // Strip the data:image/...;base64, prefix
+        const base64 = e.target.result.split(',')[1];
+        const formData = new FormData();
+        formData.append('image', base64);
+        formData.append('name', 'ZBN-' + Date.now());
+        const res = await fetch('https://api.imgbb.com/1/upload?key=' + IMGBB_API_KEY, {
+          method: 'POST',
+          body: formData
+        });
+        const data = await res.json();
+        if (data.success) {
+          resolve(data.data.url);        // full image URL
+        } else {
+          reject(new Error('ImgBB upload failed: ' + JSON.stringify(data)));
+        }
+      } catch (err) { reject(err); }
     };
     reader.readAsDataURL(file);
   });
@@ -1093,9 +1092,18 @@ async function submitForm() {
     const emp = (document.querySelector('input[name="emp"]:checked') || {}).value || '—';
     // Compress signature to ~20KB
     const sigImage = compressSig();
-    // Compress package photo to ~45KB (leave a little room)
+    // Upload photo to ImgBB and get back a URL
     const proofFile = document.getElementById('proof-file').files[0];
-    const pkgImage = proofFile ? await compressImage(proofFile, 45000, 800, 800) : '';
+    let pkgImage = '';
+    if (proofFile) {
+      document.getElementById('sending-text').textContent = 'Uploading photo...';
+      try {
+        pkgImage = await uploadToImgBB(proofFile);
+      } catch (e) {
+        // If upload fails, continue without photo rather than blocking submission
+        pkgImage = 'Photo upload failed — please check ImgBB API key';
+      }
+    }
 
     const commonParams = {
       ref_number: ref,
@@ -1111,7 +1119,7 @@ async function submitForm() {
       mode: mode,
       employee: emp,
       signature_image: sigImage,
-      package_image: pkgImage
+      package_image: pkgImage || 'No photo taken'
     };
 
     document.getElementById('sending-text').textContent = 'Sending emails...';
