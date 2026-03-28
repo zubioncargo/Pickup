@@ -618,16 +618,10 @@ textarea { resize: none; }
       <div class="card-title">Shipment Details</div>
       <div class="field">
         <label>Shipping Code / Waybill Number <span class="req">*</span></label>
-        <input type="text" id="code" placeholder="e.g. ZBN-2024-00123" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false">
+        <input type="text" id="code" placeholder="e.g. WB-2024-00123" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false">
         <div class="err-msg" id="e-code">Required</div>
       </div>
-      <div class="field">
-        <label>Manual Reference / Tracking Number <span style="font-weight:400;color:var(--mid);font-size:12px;">(optional — your own code)</span></label>
-        <div style="position:relative;">
-          <input type="text" id="manual-ref" placeholder="e.g. TRK-00987 or leave blank" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" style="padding-right:90px;">
-          <div style="position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:11px;font-weight:700;color:var(--mid);background:#f0f0f0;padding:4px 8px;border-radius:6px;pointer-events:none;letter-spacing:0.5px;">MANUAL</div>
-        </div>
-      </div>
+
       <div class="field">
         <label>Number of Packages <span class="req">*</span></label>
         <div class="count-control">
@@ -745,13 +739,14 @@ textarea { resize: none; }
         <div class="review-val" id="rv-datetime">—</div>
       </div>
       <div class="review-row">
-        <div class="review-key">Shipping Code</div>
-        <div class="review-val" id="rv-code">—</div>
+        <div class="review-key">Ref Number</div>
+        <div class="review-val" id="rv-ref" style="color:var(--orange);font-weight:700;letter-spacing:1px;">—</div>
       </div>
       <div class="review-row">
-        <div class="review-key">Manual Ref</div>
-        <div class="review-val" id="rv-manual-ref">—</div>
+        <div class="review-key">Waybill / Shipping Code</div>
+        <div class="review-val" id="rv-code">—</div>
       </div>
+
       <div class="review-row">
         <div class="review-key">Packages</div>
         <div class="review-val" id="rv-pkg">—</div>
@@ -805,8 +800,12 @@ textarea { resize: none; }
   <div class="success-icon-wrap">✓</div>
   <div class="success-title">Pickup Confirmed!</div>
   <p class="success-sub">Confirmation emails have been sent to the customer and to <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="3c46495e55535250535b554f48555f4f7c5b515d5550125f5351">[email&#160;protected]</a></p>
-  <div class="success-ref" id="success-ref">ZBN-0000</div>
-  <p style="font-size:12px;color:var(--mid);margin-bottom:20px;">Reference number for this pickup</p>
+  <div class="success-ref" id="success-ref">ZB-0000</div>
+  <p style="font-size:12px;color:var(--mid);margin-bottom:8px;">Auto-generated reference number</p>
+  <div style="background:var(--white);border-radius:12px;padding:14px 20px;border:1px solid var(--border);margin-bottom:20px;">
+    <p style="font-size:11px;color:var(--mid);margin-bottom:4px;font-weight:600;letter-spacing:1px;text-transform:uppercase;">Waybill / Shipping Code</p>
+    <p style="font-size:16px;font-weight:700;color:var(--ink);" id="success-waybill">—</p>
+  </div>
   <button class="btn-new" onclick="resetForm()">Start New Pickup</button>
 </div>
 
@@ -998,9 +997,8 @@ function buildReview() {
   const d = document.getElementById('date').value;
   const t = document.getElementById('time').value;
   document.getElementById('rv-datetime').textContent = d + ' @ ' + t;
+  document.getElementById('rv-ref').textContent = 'Will be generated on submit';
   document.getElementById('rv-code').textContent = document.getElementById('code').value;
-  const manualRef = document.getElementById('manual-ref').value.trim();
-  document.getElementById('rv-manual-ref').textContent = manualRef || '—';
   document.getElementById('rv-pkg').textContent = pkgCount + ' PCS';
   const agent = document.querySelector('input[name="agent"]:checked');
   document.getElementById('rv-agent').textContent = agent ? agent.value : '—';
@@ -1019,7 +1017,7 @@ function buildReview() {
 // Compress an image File/Blob to a base64 string under maxBytes
 // -------------------------------------------------------
 // ImgBB upload — replace YOUR_IMGBB_API_KEY with your key
-const IMGBB_API_KEY = '64eca4ce947a07000db0a9fd41ad50d3';
+const IMGBB_API_KEY = 'YOUR_IMGBB_API_KEY';
 // -------------------------------------------------------
 
 async function uploadToImgBB(file) {
@@ -1032,7 +1030,7 @@ async function uploadToImgBB(file) {
         const base64 = e.target.result.split(',')[1];
         const formData = new FormData();
         formData.append('image', base64);
-        formData.append('name', 'ZBN-' + Date.now());
+        formData.append('name', 'ZB-' + Date.now());
         const res = await fetch('https://api.imgbb.com/1/upload?key=' + IMGBB_API_KEY, {
           method: 'POST',
           body: formData
@@ -1075,7 +1073,7 @@ function compressSig() {
 async function submitForm() {
   document.getElementById('sending-overlay').classList.add('show');
   try {
-    const ref = 'ZBN-' + Date.now().toString().slice(-6);
+    const ref = 'ZB-' + Date.now().toString().slice(-6);
     const firstName = document.getElementById('first').value.trim();
     const lastName = document.getElementById('last').value.trim();
     const fullName = firstName + ' ' + lastName;
@@ -1086,7 +1084,7 @@ async function submitForm() {
     const time = document.getElementById('time').value;
     const datetime = date + ' @ ' + time;
     const code = document.getElementById('code').value.trim();
-    const manualRef = document.getElementById('manual-ref').value.trim() || 'N/A';
+
     const agent = (document.querySelector('input[name="agent"]:checked') || {}).value || '—';
     const mode = (document.querySelector('input[name="mode"]:checked') || {}).value || '—';
     const emp = (document.querySelector('input[name="emp"]:checked') || {}).value || '—';
@@ -1113,13 +1111,14 @@ async function submitForm() {
       receiver_name: receiver,
       pickup_datetime: datetime,
       shipping_code: code,
-      manual_ref: manualRef,
+
       pkg_count: pkgCount,
       agent: agent,
       mode: mode,
       employee: emp,
       signature_image: sigImage,
-      package_image: pkgImage || 'No photo taken'
+      package_image: pkgImage || 'No photo taken',
+      review_link: 'https://g.page/r/CdlxY4_2XURKEBM/review'
     };
 
     document.getElementById('sending-text').textContent = 'Sending emails...';
@@ -1128,6 +1127,8 @@ async function submitForm() {
 
     document.getElementById('sending-overlay').classList.remove('show');
     document.getElementById('success-ref').textContent = ref;
+    document.getElementById('success-waybill').textContent = document.getElementById('code').value;
+    document.getElementById('rv-ref').textContent = ref;
     document.getElementById('pages-wrap').style.display = 'none';
     document.querySelector('.bottom-nav').style.display = 'none';
     document.querySelector('.app-header').style.display = 'none';
